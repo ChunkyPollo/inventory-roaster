@@ -110,23 +110,43 @@ if uploaded:
         
         sales_df["LocID"] = sales_df[loc_col].astype(str) if loc_col else "Unknown"
 
-        # Filter locations
-        if filter_locs:
-            wanted_ids = [k for k,v in WAREHOUSES.items() if v in filter_locs]
+        # ────── FILTER LOCATIONS (WORKS FOR SINGLE OR MULTIPLE) ──────
+        if filter_locs:  # filter_locs is None if "ALL" selected
+            wanted_ids = [k for k, v in WAREHOUSES.items() if v in selected_locations]
             sales_df = sales_df[sales_df["LocID"].isin(wanted_ids)]
 
-        # Monthly sales
-        monthly = sales_df.groupby(["Month","Item ID","LocID"])["Qty Shipped"].sum().reset_index(name="Sold")
+        # ────── MONTHLY SALES (NOW WORKS EVEN FOR ONE WAREHOUSE) ──────
+        monthly = (
+            sales_df.groupby(["Month", "Item ID", "LocID"], as_index=False)["Qty Shipped"]
+            .sum()
+            .rename(columns={"Qty Shipped": "Sold"})
+        )
         monthly["Location"] = monthly["LocID"].map(WAREHOUSES)
 
-        # Top / Bottom
+        # ────── TOP / BOTTOM MOVERS – ALWAYS SHOWS REAL DATA ──────
         col1, col2 = st.columns(2)
+
         with col1:
             st.subheader("Top 20 Fast Movers")
-            st.dataframe(monthly.groupby("Item ID")["Sold"].sum().nlargest(20).reset_index())
+            top20 = (
+                monthly.groupby("Item ID", as_index=False)["Sold"]
+                .sum()
+                .nlargest(20, "Sold")
+            )
+            if not view_all:
+                top20["Location"] = " | ".join(selected_locations)
+            st.dataframe(top20[["Item ID", "Sold", "Location"]] if not view_all else top20)
+
         with col2:
             st.subheader("Bottom 20 Slow Movers")
-            st.dataframe(monthly.groupby("Item ID")["Sold"].sum().nsmallest(20).reset_index())
+            bottom20 = (
+                monthly.groupby("Item ID", as_index=False)["Sold"]
+                .sum()
+                .nsmallest(20, "Sold")
+            )
+            if not view_all:
+                bottom20["Location"] = " | ".join(selected_locations)
+            st.dataframe(bottom20[["Item ID", "Sold", "Location"]] if not view_all else bottom20)
 
         # Simple 12-month forecast (Holt-Winters)
         forecasts = []
