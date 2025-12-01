@@ -7,7 +7,7 @@ import numpy as np
 import io
 from datetime import datetime, timedelta
 import plotly.express as px
-
+st.set_page_config(page_title="Pollo Prophet", page_icon="rooster_pope.png", layout="wide")
 # ────── PASSWORD ──────
 if "auth" not in st.session_state:
     pwd = st.text_input("Password", type="password")
