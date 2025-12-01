@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════
-# POLLO PROPHET v3.0 – FINAL, BULLETPROOF, GOD-TIER VERSION
-# One file. All power. No bugs. No mercy.
+# POLLO PROPHET v3.1 – CLEAN, FINAL, GOD-TIER VERSION
+# One file. Zero warnings. Pure power.
 # ═══════════════════════════════════════════════════════════
 
 import streamlit as st
@@ -8,7 +8,6 @@ import pandas as pd
 import numpy as np
 import io
 from datetime import datetime, timedelta
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 # ────── PASSWORD ──────
 if st.session_state.get("auth") != True:
@@ -20,7 +19,7 @@ if st.session_state.get("auth") != True:
         st.error("Access denied.")
         st.stop()
 
-# ────── 6 WAREHOUSES ──────
+# ────── WAREHOUSES (CLEAN & CENTRALIZED) ──────
 WAREHOUSES = {
     "5120":   "CHP - Memphis",
     "100002": "CHP - Graniteville",
@@ -31,11 +30,11 @@ WAREHOUSES = {
 }
 
 # ────── CONFIG ──────
-st.set_page_config(page_title="Pollo Prophet v3", layout="wide")
-st.title("Pollo Prophet v3 – Forecasting Overlord")
+st.set_page_config(page_title="Pollo Prophet v3.1", layout="wide")
+st.title("Pollo Prophet v3.1 – Forecasting Overlord")
 st.markdown("**One file. All power. Upload → Forecast → Export**")
 
-# ────── LOCATION FILTER (NOW PERFECT) ──────
+# ────── LOCATION FILTER (CLEAN & BULLETPROOF) ──────
 loc_choice = st.multiselect("Warehouses", ["ALL"] + list(WAREHOUSES.values()), default=["ALL"])
 view_all = "ALL" in loc_choice
 selected_locations = [loc for loc in loc_choice if loc != "ALL"]
@@ -79,87 +78,95 @@ def load(files):
 if uploaded:
     po_df, inv_df, sales_df = load(uploaded)
 
-        if sales_df is not None and not sales_df.empty:
-            # ────── BULLETPROOF COLUMN DETECTION (NEVER CRASHES AGAIN) ──────
-            item_col = next((c for c in recent.columns if "item" in c.lower() and "id" in c.lower()), None)
-            loc_col  = next((c for c in recent.columns if "loc" in c.lower() and "id" in c.lower()), None)
-            qty_col  = next((c for c in recent.columns if "qty" in c.lower() and ("sold" in c.lower() or "ship" in c.lower())), None)
+    if sales_df is not None and len(sales_df) > 50:
+        # BULLETPROOF COLUMN DETECTION
+        item_col = next((c for c in sales_df.columns if "item" in c.lower() and "id" in c.lower()), None)
+        loc_col  = next((c for c in sales_df.columns if "loc" in c.lower() and "id" in c.lower()), None)
+        qty_col  = next((c for c in sales_df.columns if "qty" in c.lower() and ("sold" in c.lower() or "ship" in c.lower())), None)
 
-            if not all([item_col, loc_col, qty_col]):
-                st.error("Missing required columns in Sales file (Item ID, Location ID, Qty Sold/Shipped)")
-                st.stop()
+        if not all([item_col, loc_col, qty_col]):
+            st.error("Missing required columns in Sales file.")
+            st.stop()
 
-            # Last 12 weeks velocity – works with spaces, any naming
-            cutoff = datetime.now() - timedelta(days=84)
-            recent = sales_df[sales_df["Invoice_Date"] >= cutoff]
+        # Clean data
+        sales_df["Invoice_Date"] = pd.to_datetime(sales_df["Invoice_Date"], errors="coerce")
+        sales_df = sales_df.dropna(subset=["Invoice_Date"])
+        sales_df["LocID"] = sales_df[loc_col].astype(str)
 
-            velocity = (
-                recent.groupby([item_col, loc_col], as_index=False)[qty_col]
-                .sum()
-                .rename(columns={item_col: "ItemID", loc_col: "Location_ID", qty_col: "Qty_Sold"})
-            )
-            velocity["Weekly_Velocity"] = velocity["Qty_Sold"] / 12.0
-            velocity["Location_Name"] = velocity["Location_ID"].astype(str).map(WAREHOUSES)
+        # FILTER BY WAREHOUSE
+        if not view_all:
+            wanted_ids = [k for k, v in WAREHOUSES.items() if v in selected_locations]
+            sales_df = sales_df[sales_df["LocID"].isin(wanted_ids)]
+            filter_text = " | ".join(selected_locations)
+        else:
+            filter_text = "ALL WAREHOUSES"
 
-            # ────── FILTER BY WAREHOUSE (NOW WORKS PERFECTLY) ──────
-            if not view_all:
-                wanted_ids = [k for k, v in WAREHOUSES.items() if v in selected_locations]
-                velocity = velocity[velocity["Location_ID"].isin(wanted_ids)]
-                filter_text = " | ".join(selected_locations)
-            else:
-                filter_text = "ALL WAREHOUSES"
+        # LAST 12 WEEKS VELOCITY
+        cutoff = datetime.now() - timedelta(days=84)
+        recent = sales_df[sales_df["Invoice_Date"] >= cutoff]
 
-        # Filter by selected locations
-        if location_filter:
-            loc_ids = locations_df[locations_df['Sales Location Name'].isin(location_filter)]['Location ID'].astype(str).tolist()
-            velocity = velocity[velocity["Location_ID"].isin(loc_ids)]
+        velocity = (
+            recent.groupby([item_col, loc_col], as_index=False)[qty_col]
+            .sum()
+            .rename(columns={item_col: "ItemID", loc_col: "Location_ID", qty_col: "Qty_Sold"})
+        )
+        velocity["Weekly_Velocity"] = velocity["Qty_Sold"] / 12.0
+        velocity["Location_Name"] = velocity["Location_ID"].map(WAREHOUSES)
 
-        # Merge with inventory for supply analysis
+        # MERGE WITH INVENTORY
         if inv_df is not None:
-            inv_keyed = inv_df.merge(locations_df, left_on='Location', right_on='Sales Location Name', how='left')
-            inv_keyed['Location_ID'] = inv_keyed['Location ID'].astype(str)
-            merged = velocity.merge(inv_keyed[["ItemID", "Location_ID", "Qty_Available", "Sales Location Name"]], 
-                                    on=["ItemID", "Location_ID"], how="left").fillna(0)
-            merged["Days_of_Supply"] = np.where(
-                merged["Weekly_Velocity"] > 0, 
-                merged["Qty_Available"] / merged["Weekly_Velocity"], 
-                np.inf
-            )
-            merged["Location_Name"] = merged["Sales Location Name"].fillna(merged["Location_ID"].map(location_map))
+            inv_loc_col = next((c for c in inv_df.columns if "location" in c.lower()), None)
+            if inv_loc_col:
+                inv_df["LocID"] = inv_df[inv_loc_col].map({v: k for k, v in WAREHOUSES.items()}).fillna("Unknown")
 
-            # CORE DASHBOARDS – LOCATION-SMART
-            col1, col2 = st.columns(2)
-            with col1:
-                st.header("🔥 Top 20 Fast Movers (Buy More)")
-                top = merged.nlargest(20, "Weekly_Velocity")[["ItemID", "Location_Name", "Weekly_Velocity", "Qty_Available", "Days_of_Supply"]]
-                st.dataframe(top.style.format({"Weekly_Velocity": "{:.1f}", "Days_of_Supply": "{:.0f}"}), use_container_width=True)
+            merged = velocity.merge(
+                inv_df[["ItemID", "LocID", "Qty_Available"]],
+                on=["ItemID", "LocID"],
+                how="left"
+            ).fillna({"Qty_Available": 0})
+        else:
+            merged = velocity.copy()
+            merged["Qty_Available"] = 0
 
-            with col2:
-                st.header("💀 Bottom 20 Slow Movers (Buy Less / Stop)")
-                bottom = merged.nsmallest(20, "Weekly_Velocity")[["ItemID", "Location_Name", "Weekly_Velocity", "Qty_Available"]]
-                st.dataframe(bottom.style.format({"Weekly_Velocity": "{:.2f}"}), use_container_width=True)
+        merged["Days_of_Supply"] = np.where(
+            merged["Weekly_Velocity"] > 0,
+            merged["Qty_Available"] / merged["Weekly_Velocity"],
+            np.inf
+        )
 
-            st.header("🎯 Suggested Purchases (Next 30 Days – Per Location)")
-            merged["Suggested_30d"] = np.ceil((merged["Weekly_Velocity"] * 4.3) - merged["Qty_Available"]).clip(lower=0)
-            suggest = merged[merged["Suggested_30d"] > 0].nlargest(30, "Suggested_30d")
-            st.dataframe(suggest[["ItemID", "Location_Name", "Weekly_Velocity", "Qty_Available", "Suggested_30d"]], use_container_width=True)
+        # TOP & BOTTOM MOVERS
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader(f"Top 20 Fast Movers – {filter_text}")
+            top20 = merged.nlargest(20, "Weekly_Velocity")[["ItemID", "Location_Name", "Weekly_Velocity", "Qty_Available", "Days_of_Supply"]]
+            st.dataframe(top20.style.format({"Weekly_Velocity": "{:.1f}", "Days_of_Supply": "{:.0f}"}), use_container_width=True)
 
-            st.header("📊 Days of Supply Heat Map (Across All Locations)")
-            heat_data = merged.pivot_table(values="Days_of_Supply", index="ItemID", columns="Location_Name", aggfunc="mean").fillna(0)
-            st.dataframe(heat_data.style.background_gradient(cmap="RdYlGn", low=0, high=100), use_container_width=True)
+        with col2:
+            st.subheader(f"Bottom 20 Slow Movers – {filter_text}")
+            bottom20 = merged.nsmallest(20, "Weekly_Velocity")[["ItemID", "Location_Name", "Weekly_Velocity", "Qty_Available"]]
+            st.dataframe(bottom20.style.format({"Weekly_Velocity": "{:.2f}"}), use_container_width=True)
 
-            if po_df is not None:
-                st.header("⚠️ Open PO vs. Demand Gap (Location Breakdown)")
-                po_summary = po_df.groupby(["ItemID", "Location_ID"])["Qty_Ordered"].sum().reset_index()
-                po_summary["Location_Name"] = po_summary["Location_ID"].map(location_map)
-                gap = po_summary.merge(suggest[["ItemID", "Location_ID", "Suggested_30d"]], on=["ItemID", "Location_ID"], how="left")
-                gap["Gap"] = gap["Suggested_30d"] - gap["Qty_Ordered"].fillna(0)
-                st.dataframe(gap[["ItemID", "Location_Name", "Qty_Ordered", "Suggested_30d", "Gap"]], use_container_width=True)
+        # EXCEL EXPORT
+        def export():
+            out = io.BytesIO()
+            with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
+                merged.to_excel(writer, sheet_name="Velocity & Inventory", index=False)
+                top20.to_excel(writer, sheet_name="Top 20 Fast", index=False)
+                bottom20.to_excel(writer, sheet_name="Bottom 20 Slow", index=False)
+            out.seek(0)
+            return out.getvalue()
 
-        st.success("Pollo Prophet v3 is alive and unstoppable")
+        st.download_button(
+            "Download Full Report (Excel)",
+            data=export(),
+            file_name=f"Pollo_Prophet_{datetime.now():%Y-%m-%d}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        st.success("Pollo Prophet v3.1 is alive, clean, and unstoppable")
     else:
-        st.warning("Upload a Sales file with dates and location IDs")
+        st.warning("Upload a Sales file with at least 50 rows")
 else:
     st.info("Drop your reports to awaken the Prophet")
 
-st.sidebar.success("Pollo Prophet v3 – Final & Unbreakable")
+st.sidebar.success("Pollo Prophet v3.1 – Clean & Final")
