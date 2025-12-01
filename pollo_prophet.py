@@ -80,10 +80,35 @@ if uploaded:
     po_df, inv_df, sales_df = load(uploaded)
 
     if sales_df is not None and len(sales_df) > 50:
-        # Guess Location ID column
-        loc_col = next((c for c in sales_df.columns if "Loc" in str(c) and ("ID" in str(c) or "5120" in str(sales_df[c].iloc[0]))), None)
-        sales_df["LocID"] = sales_df[loc_col].astype(str) if loc_col else "Unknown"
+        # BULLETPROOF DATE + MONTH + LOCATION DETECTION
+        date_col = None
+        loc_col = None
+        
+        for col in sales_df.columns:
+            sample = str(sales_df[col].iloc[0]).lower()
+            col_lower = col.lower()
+            
+            # Find date column
+            if date_col is None and ("date" in col_lower or "invoice" in col_lower or "20" in sample):
+                try:
+                    pd.to_datetime(sales_df[col], errors='coerce').notna().sum() > 10
+                    date_col = col
+                except:
+                    pass
+            
+            # Find location ID column
+            if loc_col is None and ("loc" in col_lower or "location" in col_lower) and any(x in sample for x in ["5120","5130","5140","5010","5208","100002"]):
+                loc_col = col
+        
+        if date_col is None:
+            st.error("Could not find a date column in Sales file. Check column names.")
+            st.stop()
+        
+        sales_df["Invoice_Date"] = pd.to_datetime(sales_df[date_col], errors='coerce')
+        sales_df = sales_df.dropna(subset=["Invoice_Date"])
         sales_df["Month"] = sales_df["Invoice_Date"].dt.to_period("M").astype(str)
+        
+        sales_df["LocID"] = sales_df[loc_col].astype(str) if loc_col else "Unknown"
 
         # Filter locations
         if filter_locs:
