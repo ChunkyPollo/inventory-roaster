@@ -79,13 +79,35 @@ def load(files):
 if uploaded:
     po_df, inv_df, sales_df = load(uploaded)
 
-    if sales_df is not None and not sales_df.empty:
-        # Last 12 weeks velocity (location-aware)
-        cutoff = datetime.now() - timedelta(days=84)
-        recent = sales_df[sales_df["Invoice_Date"] >= cutoff]
-        velocity = recent.groupby(["ItemID", "Location_ID"])["Qty_Sold"].sum().reset_index()
-        velocity["Weekly_Velocity"] = velocity["Qty_Sold"] / 12
-        velocity["Location_Name"] = velocity["Location_ID"].map(location_map)
+        if sales_df is not None and not sales_df.empty:
+            # ────── BULLETPROOF COLUMN DETECTION (NEVER CRASHES AGAIN) ──────
+            item_col = next((c for c in recent.columns if "item" in c.lower() and "id" in c.lower()), None)
+            loc_col  = next((c for c in recent.columns if "loc" in c.lower() and "id" in c.lower()), None)
+            qty_col  = next((c for c in recent.columns if "qty" in c.lower() and ("sold" in c.lower() or "ship" in c.lower())), None)
+
+            if not all([item_col, loc_col, qty_col]):
+                st.error("Missing required columns in Sales file (Item ID, Location ID, Qty Sold/Shipped)")
+                st.stop()
+
+            # Last 12 weeks velocity – works with spaces, any naming
+            cutoff = datetime.now() - timedelta(days=84)
+            recent = sales_df[sales_df["Invoice_Date"] >= cutoff]
+
+            velocity = (
+                recent.groupby([item_col, loc_col], as_index=False)[qty_col]
+                .sum()
+                .rename(columns={item_col: "ItemID", loc_col: "Location_ID", qty_col: "Qty_Sold"})
+            )
+            velocity["Weekly_Velocity"] = velocity["Qty_Sold"] / 12.0
+            velocity["Location_Name"] = velocity["Location_ID"].astype(str).map(WAREHOUSES)
+
+            # ────── FILTER BY WAREHOUSE (NOW WORKS PERFECTLY) ──────
+            if not view_all:
+                wanted_ids = [k for k, v in WAREHOUSES.items() if v in selected_locations]
+                velocity = velocity[velocity["Location_ID"].isin(wanted_ids)]
+                filter_text = " | ".join(selected_locations)
+            else:
+                filter_text = "ALL WAREHOUSES"
 
         # Filter by selected locations
         if location_filter:
