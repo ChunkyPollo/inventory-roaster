@@ -49,13 +49,31 @@ uploaded = st.file_uploader("Drop Open PO • Inventory • Sales files",
 def load(files):
     po, inv, sales = None, None, None
     for f in files:
-        df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
+        try:
+            if f.name.endswith(".csv"):
+                df = pd.read_csv(f)
+            else:
+                # Excel fix: specify engine + sheet
+                df = pd.read_excel(f, engine='openpyxl', sheet_name=0)  # first sheet only
+        except Exception as e:
+            st.error(f"Failed to read {f.name}: {e}")
+            continue  # skip bad file
+        
         name = f.name.lower()
-        if any(x in name for x in ["po","open","purchase"]): po = df
-        elif "inv" in name: inv = df
+        if any(x in name for x in ["po","open","purchase"]): 
+            po = df
+            st.success(f"Loaded PO: {f.name}")
+        elif "inv" in name: 
+            inv = df
+            st.success(f"Loaded Inventory: {f.name}")
         else: 
             sales = df
-            sales["Invoice_Date"] = pd.to_datetime(df.iloc[:,0], errors='coerce')  # first column = date
+            st.success(f"Loaded Sales: {f.name}")
+            # Date fix
+            date_cols = [col for col in df.columns if 'date' in col.lower() or 'Date' in col]
+            if date_cols:
+                sales[date_cols[0]] = pd.to_datetime(df[date_cols[0]], errors='coerce')
+    
     return po, inv, sales
 
 if uploaded:
