@@ -166,10 +166,9 @@ if uploaded:
     if god_mode:
         merged = inv_df.copy()
         merged["Weekly"] = merged["Velocity"] / 4.333
-        merged["OnHand"] = merged["Net Qty"]
+        merged["OnHand"]      = merged["Net Qty"]
         merged["DollarValue"] = merged["Net Qty"] * merged["MovingCost"]
-        merged["DeadStock"] = (merged["Velocity"] == 0) & (merged["Net Qty"] > 0)
-
+        merged["DeadStock"]   = (merged["Velocity"] == 0) & (merged["Net Qty"] > 0)
         merged["ItemID"] = merged["ItemID"].astype("string").str.strip()
         merged["ProductGroup"] = merged["ProductGroup"].astype("string")
 
