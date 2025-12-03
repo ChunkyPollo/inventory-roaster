@@ -166,19 +166,18 @@ if uploaded:
     if god_mode:
         merged = inv_df.copy()
         merged["Weekly"] = merged["Velocity"] / 4.333
-        # FIX: Use correct column name "Net Qty" (with space!)
         merged["OnHand"] = merged["Net Qty"]
         merged["DollarValue"] = merged["Net Qty"] * merged["MovingCost"]
         merged["DeadStock"] = (merged["Velocity"] == 0) & (merged["Net Qty"] > 0)
 
-        # Clean strings
         merged["ItemID"] = merged["ItemID"].astype("string").str.strip()
         merged["ProductGroup"] = merged["ProductGroup"].astype("string")
 
-        # Days since last sale
+        # FINAL WORKING DAYS SINCE LAST SALE — NO MORE ERRORS
         merged["LastSale"] = pd.to_datetime(merged["LastSale"], errors="coerce")
-        now = pd.Timestamp.now().normalize()
-        merged["DaysSinceSale"] = (now merged["LastSale"]).dt.days.fillna(9999).astype("int64")
+        today = pd.Timestamp.today().normalize()
+        last_sale = pd.to_datetime(merged["LastSale"])
+        merged["DaysSinceSale"] = (today - last_sale).dt.days.fillna(9999).astype("Int64")
 
     else:
         # LEGACY PATH – MUST create 'merged' or app dies silently
