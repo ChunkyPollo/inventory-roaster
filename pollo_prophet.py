@@ -103,7 +103,7 @@ def load_data(files):
             df["LastSale"] = pd.to_datetime(df["Last Sale Date"], errors="coerce")
             df["ProductGroup"] = df["Product Group"].astype(str)
 
-            inv_data.append(df[["ItemID", "LocID", "OnHand", "NetQty", "Velocity", "MovingCost", "LastSale", "ProductGroup"]])
+            inv_data.append(df[["ItemID", "LocID", "OnHand", "Net Qty", "Velocity", "MovingCost", "LastSale", "ProductGroup"]])
             continue
 
         # LEGACY SALES FILE
