@@ -1,7 +1,7 @@
 # POLLO PROPHET v12 – THE ONE TRUE PROPHET (FINAL FIXED EDITION)
 # One file to rule them all. No deprecated garbage. Only prophecy.
 # doomers_fun.txt required in repo root for eternal wisdom.
-# Fixed: Removed uploaded_file_manager type hint (outdated in new Streamlit). DaysSinceSale now uses safe apply() to avoid type errors.
+# Column detection fix: Normalized (lower, strip, '_' to ' ') for robust matching across files.
 from __future__ import annotations
 import streamlit as st
 import pandas as pd
@@ -121,47 +121,49 @@ def load_data(files):
     for f in files:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
+            # Normalize columns for robust matching (strip, lower, '_' to ' ')
+            df.columns = [c.strip().lower().replace('_', ' ') for c in df.columns]
         except Exception as e:
             logger.error(f"Failed to read {f.name}: {e}")
             st.error(f"Failed to read {f.name}: {e}")
             continue
         # GOD-TIER
-        if "AVE/MTH" in df.columns and "Moving_Avg_Cost" in df.columns:
+        if "ave/mth" in df.columns and "moving avg cost" in df.columns:
             god_mode = True
-            df = fix_dates_with_calendar(df, "Last_Sale_Date")
-            df["LocID"] = df["Location_ID"].astype(str)
-            df["ItemID"] = df["Item_ID"].astype(str).str.strip()
-            df["OnHand"] = pd.to_numeric(df["Qty_On_Hand"], errors="coerce").fillna(0)
-            df["NetQty"] = pd.to_numeric(df["Net_Qty"], errors="coerce").fillna(0)
-            df["Velocity"] = pd.to_numeric(df["AVE/MTH"], errors="coerce").fillna(0)
-            df["MovingCost"] = pd.to_numeric(df["Moving_Avg_Cost"], errors="coerce").fillna(0)
-            df["LastSale"] = df["Clean_Date"]
-            df["ProductGroup"] = df["Product_Group"].astype(str)
-            inv_data.append(df[["ItemID", "LocID", "OnHand", "NetQty", "Velocity", "MovingCost", "LastSale", "ProductGroup"]])
+            df = fix_dates_with_calendar(df, "last sale date")
+            df["locid"] = df["location id"].astype(str)
+            df["itemid"] = df["item id"].astype(str).str.strip()
+            df["onhand"] = pd.to_numeric(df["qty on hand"], errors="coerce").fillna(0)
+            df["netqty"] = pd.to_numeric(df["net qty"], errors="coerce").fillna(0)
+            df["velocity"] = pd.to_numeric(df["ave/mth"], errors="coerce").fillna(0)
+            df["movingcost"] = pd.to_numeric(df["moving avg cost"], errors="coerce").fillna(0)
+            df["lastsale"] = df["clean date"]
+            df["productgroup"] = df["product group"].astype(str)
+            inv_data.append(df[["itemid", "locid", "onhand", "netqty", "velocity", "movingcost", "lastsale", "productgroup"]])
             st.success(f"GOD-TIER: {f.name}")
             continue
         # LEGACY SALES
-        if "Invoice Date" in df.columns:
-            df = fix_dates_with_calendar(df, "Invoice Date")
+        if "invoice date" in df.columns:
+            df = fix_dates_with_calendar(df, "invoice date")
             temp = pd.DataFrame({
-                "ItemID": df["Item ID"].astype(str),
-                "LocID": df["Location ID"].astype(str),
-                "Qty": pd.to_numeric(df["Qty Shipped"], errors="coerce").fillna(0),
-                "Date": df["Clean_Date"]
-            }).dropna(subset=["Date"])
-            temp["ProductGroup"] = temp["ItemID"].str.extract(r'^([A-Z]+)')[0]
+                "itemid": df["item id"].astype(str),
+                "locid": df["location id"].astype(str),
+                "qty": pd.to_numeric(df["qty shipped"], errors="coerce").fillna(0),
+                "date": df["clean date"]
+            }).dropna(subset=["date"])
+            temp["productgroup"] = temp["itemid"].str.extract(r'^([A-Z]+)')[0]
             sales_data.append(temp)
             st.info(f"Legacy sales: {f.name}")
         # LEGACY INVENTORY
-        elif "Qty On Hand" in df.columns:
-            df["LocID"] = df["Location Name"].str.lower().map(NAME_TO_ID) if "Location Name" in df.columns else df["Location_ID"].astype(str)
-            df = df.dropna(subset=["LocID"])
+        elif "qty on hand" in df.columns:
+            df["locid"] = df["location name"].str.lower().map(NAME_TO_ID) if "location name" in df.columns else df["location id"].astype(str)
+            df = df.dropna(subset=["locid"])
             temp = pd.DataFrame({
-                "ItemID": df["Item ID"].astype(str),
-                "LocID": df["LocID"].astype(str),
-                "OnHand": pd.to_numeric(df["Qty On Hand"], errors="coerce").fillna(0)
+                "itemid": df["item id"].astype(str),
+                "locid": df["locid"].astype(str),
+                "onhand": pd.to_numeric(df["qty on hand"], errors="coerce").fillna(0)
             })
-            temp["ProductGroup"] = temp["ItemID"].str.extract(r'^([A-Z]+)')[0]
+            temp["productgroup"] = temp["itemid"].str.extract(r'^([A-Z]+)')[0]
             inv_data.append(temp)
             st.info(f"Legacy inventory: {f.name}")
     sales = pd.concat(sales_data, ignore_index=True) if sales_data else pd.DataFrame()
@@ -180,54 +182,54 @@ if uploaded:
         st.info("Legacy mode active")
     # FILTER LOCATIONS
     wanted = list(WAREHOUSES.keys()) if view_all else selected_locs
-    inv_df = inv_df[inv_df["LocID"].isin(wanted)]
+    inv_df = inv_df[inv_df["locid"].isin(wanted)]
     # PROCESSING
     if god_mode:
         merged = inv_df.copy()
-        merged["Weekly"] = merged["Velocity"] / 4.333
-        merged["OnHand"] = merged["NetQty"]
-        merged["DollarValue"] = merged["NetQty"] * merged["MovingCost"]
-        merged["DeadStock"] = (merged["Velocity"] == 0) & (merged["NetQty"] > 0)
-        merged["ItemID"] = merged["ItemID"].astype("string").str.strip()
-        merged["ProductGroup"] = merged["ProductGroup"].astype("string")
-        merged["LastSale"] = pd.to_datetime(merged["LastSale"], errors="coerce")
+        merged["weekly"] = merged["velocity"] / 4.333
+        merged["onhand"] = merged["netqty"]
+        merged["dollarvalue"] = merged["netqty"] * merged["movingcost"]
+        merged["deadstock"] = (merged["velocity"] == 0) & (merged["netqty"] > 0)
+        merged["itemid"] = merged["itemid"].astype("string").str.strip()
+        merged["productgroup"] = merged["productgroup"].astype("string")
+        merged["lastsale"] = pd.to_datetime(merged["lastsale"], errors="coerce")
         today = pd.Timestamp.today().normalize()
-        merged["DaysSinceSale"] = merged["LastSale"].apply(lambda x: (today - x).days if pd.notnull(x) else 9999).astype("Int64")  # Safe apply for days
+        merged["dayssincesale"] = merged["lastsale"].apply(lambda x: (today - x).days if pd.notnull(x) else 9999).astype("Int64")  # Safe apply for days
     else:
         velocity_weeks: int = forecast_weeks // 4  # Define velocity_weeks for legacy
         cutoff = datetime.now() - timedelta(days=velocity_weeks * 7)
-        recent = sales_df[sales_df["Date"] >= cutoff]
-        velocity = recent.groupby(["ItemID", "ProductGroup"], as_index=False)["Qty"].sum()
-        velocity["Weekly"] = velocity["Qty"] / velocity_weeks
-        inv_sum = inv_df.groupby(["ItemID", "ProductGroup"], as_index=False)["OnHand"].sum()
-        merged = pd.merge(velocity, inv_sum, on=["ItemID", "ProductGroup"], how="outer").fillna(0)
-        merged["DollarValue"] = 0
-        merged["DeadStock"] = (merged["Weekly"] == 0) & (merged["OnHand"] > 0)
-        merged["DaysSinceSale"] = 9999
-        merged["MovingCost"] = 0
-        merged["NetQty"] = merged["OnHand"]
+        recent = sales_df[sales_df["date"] >= cutoff]
+        velocity = recent.groupby(["itemid", "productgroup"], as_index=False)["qty"].sum()
+        velocity["weekly"] = velocity["qty"] / velocity_weeks
+        inv_sum = inv_df.groupby(["itemid", "productgroup"], as_index=False)["onhand"].sum()
+        merged = pd.merge(velocity, inv_sum, on=["itemid", "productgroup"], how="outer").fillna(0)
+        merged["dollarvalue"] = 0
+        merged["deadstock"] = (merged["weekly"] == 0) & (merged["onhand"] > 0)
+        merged["dayssincesale"] = 9999
+        merged["movingcost"] = 0
+        merged["netqty"] = merged["onhand"]
 
     # FINAL CALCULATIONS – Smoothing with Pandas EWM
     def forecast_item(row):
-        ts = pd.Series(np.full(12, row["Weekly"]))  # Mock TS
+        ts = pd.Series(np.full(12, row["weekly"]))  # Mock TS
         smoothed = ts.ewm(span=4).mean()  # Exponential smoothing
         fc = smoothed.iloc[-1] * (forecast_weeks // 4) * 1.15  # Approx monthly to weekly
         return max(0, round(fc))
-    merged["Forecast"] = merged.apply(forecast_item, axis=1)
+    merged["forecast"] = merged.apply(forecast_item, axis=1)
 
-    merged["LeadDemand"] = merged["Weekly"] * lead_time_weeks
-    merged["SafetyStock"] = merged["Weekly"] * safety_weeks
-    merged["ReorderPoint"] = merged["LeadDemand"] + merged["SafetyStock"]
-    merged["SuggestedOrder"] = np.maximum(0, merged["ReorderPoint"] - merged["OnHand"]).astype(int)
-    merged["OrderValue"] = (merged["SuggestedOrder"] * merged["MovingCost"]).round(2)
+    merged["leaddemand"] = merged["weekly"] * lead_time_weeks
+    merged["safetystock"] = merged["weekly"] * safety_weeks
+    merged["reorderpoint"] = merged["leaddemand"] + merged["safetystock"]
+    merged["suggestedorder"] = np.maximum(0, merged["reorderpoint"] - merged["onhand"]).astype(int)
+    merged["ordervalue"] = (merged["suggestedorder"] * merged["movingcost"]).round(2)
 
     # SEARCH
     query = st.text_input("Search SKU / Group")
     df_display = merged
     if query:
         mask = (
-            merged["ItemID"].str.contains(query, case=False, na=False) |
-            merged["ProductGroup"].str.contains(query, case=False, na=False)
+            merged["itemid"].str.contains(query, case=False, na=False) |
+            merged["productgroup"].str.contains(query, case=False, na=False)
         )
         df_display = merged[mask]
 
@@ -236,57 +238,57 @@ if uploaded:
 
     with tab1:
         st.subheader("Top Selling SKUs")
-        top = df_display.nlargest(top_n, "Weekly")
-        cols = ["ItemID", "ProductGroup", "Weekly", "OnHand", "Forecast"]
+        top = df_display.nlargest(top_n, "weekly")
+        cols = ["itemid", "productgroup", "weekly", "onhand", "forecast"]
         if show_dollars and god_mode:
-            cols += ["DollarValue"]
+            cols += ["dollarvalue"]
         st.dataframe(top[cols].style.format({
-            "Weekly": "{:.1f}",
-            "Forecast": "{:,.0f}",
-            "DollarValue": "${:,.0f}"
+            "weekly": "{:.1f}",
+            "forecast": "{:,.0f}",
+            "dollarvalue": "${:,.0f}"
         }), height=500)
-        fig = px.bar(top.head(20), x="ItemID", y="Weekly", color="ProductGroup", title="Velocity Kings")
-        fig.add_hline(y=merged["Weekly"].quantile(0.75), line_dash="dash", annotation_text="75th Percentile")
+        fig = px.bar(top.head(20), x="itemid", y="weekly", color="productgroup", title="Velocity Kings")
+        fig.add_hline(y=merged["weekly"].quantile(0.75), line_dash="dash", annotation_text="75th Percentile")
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
         st.subheader("Slow / Dead Stock")
-        slow = df_display.nsmallest(top_n, "Weekly")
-        dead = df_display[df_display["DeadStock"]]
-        st.dataframe(slow[["ItemID", "ProductGroup", "Weekly", "OnHand", "DaysSinceSale"]], height=400)
+        slow = df_display.nsmallest(top_n, "weekly")
+        dead = df_display[df_display["deadstock"]]
+        st.dataframe(slow[["itemid", "productgroup", "weekly", "onhand", "dayssincesale"]], height=400)
         if not dead.empty:
             st.error(f"DEAD STOCK → {len(dead)} SKUs")
-            dead_display = dead[["ItemID", "ProductGroup", "OnHand", "DaysSinceSale"]]
+            dead_display = dead[["itemid", "productgroup", "onhand", "dayssincesale"]]
             if show_dollars and god_mode:
-                dead_display["Trapped $"] = (dead["NetQty"] * dead["MovingCost"]).round(0)
+                dead_display["Trapped $"] = (dead["netqty"] * dead["movingcost"]).round(0)
             st.dataframe(dead_display, height=400)
 
     with tab3:
         st.subheader("Smart Purchase Recommendations")
-        orders = df_display[df_display["SuggestedOrder"] > 0].copy()
-        orders = orders.sort_values("SuggestedOrder", ascending=False)
-        order_cols = ["ItemID", "ProductGroup", "Weekly", "OnHand", "SuggestedOrder"]
+        orders = df_display[df_display["suggestedorder"] > 0].copy()
+        orders = orders.sort_values("suggestedorder", ascending=False)
+        order_cols = ["itemid", "productgroup", "weekly", "onhand", "suggestedorder"]
         if show_dollars and god_mode:
-            order_cols += ["OrderValue"]
+            order_cols += ["ordervalue"]
         st.dataframe(orders[order_cols].style.format({
-            "SuggestedOrder": "{:,.0f}",
-            "OrderValue": "${:,.0f}"
+            "suggestedorder": "{:,.0f}",
+            "ordervalue": "${:,.0f}"
         }), height=600)
-        total_buy = orders["SuggestedOrder"].sum()
-        total_value = orders["OrderValue"].sum() if show_dollars and god_mode else 0
+        total_buy = orders["suggestedorder"].sum()
+        total_value = orders["ordervalue"].sum() if show_dollars and god_mode else 0
         st.metric("Total Units to Buy", f"{total_buy:,.0f}", delta=f"{total_value:,.0f}$" if total_value else "")
         csv = orders.to_csv(index=False)
         st.download_button("Export PO List → CSV", csv, "POLLO_PO_LIST.csv", "text/csv")
 
     with tab4:
         if st.button("Consult THE Pollo Prophet"):
-            top_sku = top.iloc[0]["ItemID"] if not top.empty else "nothing"
+            top_sku = top.iloc[0]["itemid"] if not top.empty else "nothing"
             dead_count = len(dead)
             prophecy = random.choice([
                 f"{top_sku} is your golden goose. Feed it.",
                 f"{dead_count} corpses in the warehouse. Burn them.",
                 f"The forecast demands {int(total_buy):,} units. Obey.",
-                f"Trapped capital: ${merged[merged['DeadStock']]['DollarValue'].sum():,.0f}. Free it or perish.",
+                f"Trapped capital: ${merged[merged['deadstock']]['dollarvalue'].sum():,.0f}. Free it or perish.",
                 f"BSAMWASH still reigns supreme. All else is dust."
             ])
             st.markdown(f"**{prophecy}** \n— *THE Pollo Prophet*")
