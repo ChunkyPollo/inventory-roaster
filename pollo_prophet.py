@@ -1,7 +1,7 @@
 # POLLO PROPHET v12 – THE ONE TRUE PROPHET (FINAL FIXED EDITION)
 # One file to rule them all. No deprecated garbage. Only prophecy.
 # doomers_fun.txt required in repo root for eternal wisdom.
-# Widget fix: Moved interactive date fixing outside cached load_data – no more CachedWidgetWarning.
+# Widget fix: Date fixing moved outside cache – no CachedWidgetWarning.
 from __future__ import annotations
 import streamlit as st
 import pandas as pd
@@ -112,9 +112,9 @@ def fix_dates_with_calendar(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     df["Clean_Date"] = df["Clean_Date"].fillna(pd.Timestamp("1900-01-01"))
     return df
 
-# ────── RAW DATA LOADER (cached, no widgets) ──────
+# ────── DATA LOADER ──────
 @st.cache_data(ttl=3600)
-def raw_load_data(files):
+def load_data(files):
     sales_data = []
     inv_data = []
     god_mode = False
@@ -127,8 +127,9 @@ def raw_load_data(files):
             logger.error(f"Failed to read {f.name}: {e}")
             st.error(f"Failed to read {f.name}: {e}")
             continue
-        # GOD-TIER
-        if "ave/mth" in df.columns and "moving avg cost" in df.columns:
+        # GOD-TIER – check all key columns to avoid KeyError
+        required_god_cols = ["ave/mth", "moving avg cost", "net qty", "qty on hand", "last sale date", "product group"]
+        if all(col in df.columns for col in required_god_cols):
             god_mode = True
             df["locid"] = df["location id"].astype(str)
             df["itemid"] = df["item id"].astype(str).str.strip()
@@ -169,7 +170,7 @@ def raw_load_data(files):
     return sales, inv, god_mode
 
 if uploaded:
-    sales_df, inv_df, god_mode = raw_load_data(uploaded)
+    sales_df, inv_df, god_mode = load_data(uploaded)
     if inv_df.empty:
         st.error("No data. Prophet rejects.")
         st.stop()
@@ -180,9 +181,9 @@ if uploaded:
         st.info("Legacy mode active")
     # INTERACTIVE DATE FIXING (outside cache)
     if god_mode:
-        inv_df = fix_dates_with_calendar(inv_df, "lastsale")
+        inv_df = fix_dates_with_calendar(inv_df, "last sale date")
     else:
-        sales_df = fix_dates_with_calendar(sales_df, "date")
+        sales_df = fix_dates_with_calendar(sales_df, "invoice date")
     # FILTER LOCATIONS
     wanted = list(WAREHOUSES.keys()) if view_all else selected_locs
     inv_df = inv_df[inv_df["locid"].isin(wanted)]
