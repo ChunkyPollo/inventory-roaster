@@ -1,7 +1,7 @@
 # POLLO PROPHET v12 – THE ONE TRUE PROPHET (FINAL FIXED EDITION)
 # One file to rule them all. No deprecated garbage. Only prophecy.
 # doomers_fun.txt required in repo root for eternal wisdom.
-# Column detection fix: Normalized (lower, strip, '_' to ' ') for robust matching across files.
+# Widget fix: Moved interactive date fixing outside cached load_data – no more CachedWidgetWarning.
 from __future__ import annotations
 import streamlit as st
 import pandas as pd
@@ -112,9 +112,9 @@ def fix_dates_with_calendar(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     df["Clean_Date"] = df["Clean_Date"].fillna(pd.Timestamp("1900-01-01"))
     return df
 
-# ────── DATA LOADER ──────
+# ────── RAW DATA LOADER (cached, no widgets) ──────
 @st.cache_data(ttl=3600)
-def load_data(files):
+def raw_load_data(files):
     sales_data = []
     inv_data = []
     god_mode = False
@@ -130,26 +130,24 @@ def load_data(files):
         # GOD-TIER
         if "ave/mth" in df.columns and "moving avg cost" in df.columns:
             god_mode = True
-            df = fix_dates_with_calendar(df, "last sale date")
             df["locid"] = df["location id"].astype(str)
             df["itemid"] = df["item id"].astype(str).str.strip()
             df["onhand"] = pd.to_numeric(df["qty on hand"], errors="coerce").fillna(0)
             df["netqty"] = pd.to_numeric(df["net qty"], errors="coerce").fillna(0)
             df["velocity"] = pd.to_numeric(df["ave/mth"], errors="coerce").fillna(0)
             df["movingcost"] = pd.to_numeric(df["moving avg cost"], errors="coerce").fillna(0)
-            df["lastsale"] = df["clean date"]
+            df["lastsale"] = pd.to_datetime(df["last sale date"], errors="coerce")
             df["productgroup"] = df["product group"].astype(str)
             inv_data.append(df[["itemid", "locid", "onhand", "netqty", "velocity", "movingcost", "lastsale", "productgroup"]])
             st.success(f"GOD-TIER: {f.name}")
             continue
         # LEGACY SALES
         if "invoice date" in df.columns:
-            df = fix_dates_with_calendar(df, "invoice date")
             temp = pd.DataFrame({
                 "itemid": df["item id"].astype(str),
                 "locid": df["location id"].astype(str),
                 "qty": pd.to_numeric(df["qty shipped"], errors="coerce").fillna(0),
-                "date": df["clean date"]
+                "date": pd.to_datetime(df["invoice date"], errors="coerce")
             }).dropna(subset=["date"])
             temp["productgroup"] = temp["itemid"].str.extract(r'^([A-Z]+)')[0]
             sales_data.append(temp)
@@ -171,7 +169,7 @@ def load_data(files):
     return sales, inv, god_mode
 
 if uploaded:
-    sales_df, inv_df, god_mode = load_data(uploaded)
+    sales_df, inv_df, god_mode = raw_load_data(uploaded)
     if inv_df.empty:
         st.error("No data. Prophet rejects.")
         st.stop()
@@ -180,6 +178,11 @@ if uploaded:
         st.balloons()
     else:
         st.info("Legacy mode active")
+    # INTERACTIVE DATE FIXING (outside cache)
+    if god_mode:
+        inv_df = fix_dates_with_calendar(inv_df, "lastsale")
+    else:
+        sales_df = fix_dates_with_calendar(sales_df, "date")
     # FILTER LOCATIONS
     wanted = list(WAREHOUSES.keys()) if view_all else selected_locs
     inv_df = inv_df[inv_df["locid"].isin(wanted)]
