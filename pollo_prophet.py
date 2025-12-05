@@ -16,7 +16,7 @@ st.set_page_config(page_title="Pollo Prophet v12", page_icon="rooster_pope.png",
 
 # ────── AUTHENTICATION ──────
 if "auth" not in st.session_state:
-    pwd = st.text_input("Password", type="password", help="Hint: pollo + current year")
+    pwd = st.text_input("Password", type="password", help="Hint: Billy sits on it")
     if pwd == "pollo2025":
         st.session_state.auth = True
         st.rerun()
