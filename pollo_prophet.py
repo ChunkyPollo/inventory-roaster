@@ -25,7 +25,7 @@ if "auth" not in st.session_state:
 
 # ────── WAREHOUSE MAPPING ──────
 WAREHOUSES = {
-    = {
+    
     "5120": "CHP - Memphis",
     "100002": "CHP - Graniteville",
     "5130": "CHP - Arlington",
@@ -34,7 +34,7 @@ WAREHOUSES = {
     "5208": "SEAM - Showroom"
 }
 NAME_TO_ID = {v.lower(): k for k, v in WAREHOUSES.items()}
-
+            
 # ────── HEADER ──────
 st.title("Pollo Prophet v12.6 – The One True Prophet")
 st.markdown("**Drop your inventory report. Receive divine judgment.**")
