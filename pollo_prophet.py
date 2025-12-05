@@ -39,15 +39,15 @@ WAREHOUSES = {
     "5208": "SEAM - Showroom"
 }
 # ────── PAGE ──────
-st.set_page_config(page_title="Pollo Prophet v5.3", layout="wide", page_icon="Rooster")
-st.title("Rooster Pollo Prophet v5.3 — Serial-Proof Edition")
-st.markdown("**No serial numbers or fake 1990 dates can fool me.**")
+st.set_page_config(page_title="Pollo Prophet v5.4", layout="wide", page_icon="Rooster")
+st.title("Rooster Pollo Prophet v5.4 — Bug-Proof Edition")
+st.markdown("**No ambiguities or fakes can stop me.**")
 with st.sidebar:
     st.header("Controls")
     top_n = st.slider("Top/Bottom Count", 5, 100, 20)
     forecast_months = st.slider("Forecast Horizon", 3, 24, 12)
     st.markdown("---")
-    st.success("v5.3 — Serial-Proof • Handles Excel numbers too")
+    st.success("v5.4 — Bug-Proof • Fixed file check ambiguity")
 # ────── FILE UPLOADER ──────
 uploaded = st.file_uploader(
     "Drop Inventory & Sales files",
@@ -60,7 +60,7 @@ def fix_dates_with_calendar(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
     """Interactive fixer with serial date detection — handles numbers too"""
     if col_name not in df.columns:
         return df
-    # IMPROVED: Detect and convert Excel serial dates if numeric
+    # Detect and convert Excel serial dates if numeric
     is_numeric = pd.to_numeric(df[col_name], errors='coerce').notna().mean() > 0.9
     if is_numeric:
         serial_col = pd.to_numeric(df[col_name], errors='coerce')
@@ -127,7 +127,7 @@ if uploaded:
                     st.success(f"Sales: {f.name}")
             except Exception as e:
                 st.error(f"Failed: {f.name} → {e}")
-        if not inv_df or not sales_dfs:
+        if inv_df is None or not sales_dfs:  # FIXED: Use 'is None' to avoid DataFrame bool ambiguity
             st.error("Need both Inventory + Sales files")
             st.stop()
         sales_raw = pd.concat(sales_dfs, ignore_index=True)
@@ -144,7 +144,7 @@ if uploaded:
         "item": col_find(inv, ["item", "sku", "product"]),
         "on_hand": col_find(inv, ["on hand", "qoh", "onhand"]),
         "cost": col_find(inv, ["cost", "price"]),
-        "last_sale": col_find(inv, ["last sale", "last_sales_date"])  # IMPROVED: Detect if present
+        "last_sale": col_find(inv, ["last sale", "last_sales_date"])
     }
     if not all(v for k, v in inv_cols.items() if k != "last_sale"):
         st.error("Inventory missing required columns")
@@ -154,7 +154,7 @@ if uploaded:
     inv["On_Hand"] = pd.to_numeric(inv[inv_cols["on_hand"]], errors="coerce").fillna(0)
     inv["Cost"] = pd.to_numeric(inv[inv_cols["cost"]].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce").fillna(0)
     inv["Location_Name"] = inv["Location_ID"].map(WAREHOUSES).fillna("Unknown")
-    # IMPROVED: Parse inventory's last_sale if present as fallback
+    # Parse inventory's last_sale if present as fallback
     if inv_cols["last_sale"]:
         inv = fix_dates_with_calendar(inv, inv_cols["last_sale"])
         inv["Inv_Last_Sale_Date"] = inv["Clean_Date"]
@@ -196,7 +196,7 @@ if uploaded:
         last_sales = pd.DataFrame()
     inv = inv.merge(last_sales, left_on=['Item_ID', 'Location_ID'], right_on=['Item_ID', 'Loc_ID'], how='left')
     inv.drop(columns=['Loc_ID'], inplace=True, errors='ignore')
-    # IMPROVED: Fallback to inv's parsed last_sale if no sales-derived
+    # Fallback to inv's parsed last_sale if no sales-derived
     if 'Inv_Last_Sale_Date' in inv.columns:
         inv['Last_Sale_Date'] = inv['Last_Sale_Date'].combine_first(inv['Inv_Last_Sale_Date'])
     inv['Days_Since_Last_Sale'] = np.where(
@@ -266,8 +266,8 @@ if uploaded:
         file_name=f"Pollo_Prophet_{datetime.now():%Y%m%d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    st.success("Pollo Prophet v5.3 is immortal. Serial dates decoded.")
+    st.success("Pollo Prophet v5.4 is immortal. Bugs squashed.")
     st.balloons()
 else:
     st.info("Upload files → I fix dates, ignore fakes, decode serials → You win.")
-    st.markdown("### No serial or placeholder can stop the Rooster now.")
+    st.markdown("### No serial, placeholder, or bug can stop the Rooster now.")
