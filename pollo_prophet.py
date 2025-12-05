@@ -1,5 +1,5 @@
-# POLLO PROPHET v12 – THE ONE TRUE PROPHET (FINAL, BULLETPROOF EDITION)
-# Zero syntax errors. Zero KeyErrors. 1/1/1990 fixed. Ready to deploy.
+# POLLO PROPHET v12 – THE ONE TRUE PROPHET (LOCATION ID ADDED)
+# Location ID now first column in all tables – exactly like your reports.
 
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ st.set_page_config(page_title="Pollo Prophet v12", page_icon="rooster_pope.png",
 
 # ────── AUTHENTICATION ──────
 if "auth" not in st.session_state:
-    pwd = st.text_input("Password", type="password", help="Hint: A Billy A Billy A Billy")
+    pwd = st.text_input("Password", type="password", help="Hint: pollo + current year")
     if pwd == "pollo2025":
         st.session_state.auth = True
         st.rerun()
@@ -33,7 +33,7 @@ WAREHOUSES = {
 }
 NAME_TO_ID = {v.lower(): k for k, v in WAREHOUSES.items()}
 
-# ─────── HEADER ──────
+# ────── HEADER ──────
 st.title("Pollo Prophet v12 – The One True Prophet")
 st.markdown("**Drop your inventory report. Receive judgment.**")
 
@@ -54,13 +54,13 @@ safety_weeks = st.sidebar.slider("Safety Stock (Weeks)", 1, 12, 4)
 top_n = st.sidebar.slider("Top/Bottom Count", 5, 50, 15)
 show_dollars = st.sidebar.checkbox("Show Dollar Values", value=True)
 
-# ────── LOCATION FILTER (FIXED LINE) ──────
+# ────── LOCATION FILTER ──────
 loc_choice = st.multiselect(
     "Warehouses",
     options=["ALL"] + list(WAREHOUSES.values()),
     default=["ALL"]
 )
-view_all = "ALL" in loc_choice                         # ← THIS LINE WAS BROKEN BEFORE
+view_all = "ALL" in loc_choice
 selected_locs = [k for k, v in WAREHOUSES.items() if v in loc_choice and v != "ALL"]
 
 # ────── FILE UPLOADER ──────
@@ -70,7 +70,7 @@ uploaded = st.file_uploader(
     accept_multiple_files=True
 )
 
-# ─────── ROBUST COLUMN MAPPING ──────
+# ────── ROBUST COLUMN MAPPING ──────
 def map_columns(df: pd.DataFrame) -> pd.DataFrame:
     norm = {c.lower().replace('_', ' ').replace('-', ' ').strip(): c for c in df.columns}
     mapping = {}
@@ -91,7 +91,7 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
                 break
     return df.rename(columns=mapping)
 
-# ────── MAIN DATA LOADER (CACHED) ──────
+# ────── MAIN DATA LOADER ──────
 @st.cache_data(ttl=3600)
 def load_inventory(files):
     dfs = []
@@ -144,7 +144,7 @@ if uploaded:
     df["dollarvalue"] = df["net qty"] * df["moving avg cost"]
     df["deadstock"] = (df["ave/mth"] == 0) & (df["net qty"] > 0)
 
-    # INTELLIGENT LAST SALE DISPLAY – fixes 1/1/1990 forever
+    # INTELLIGENT LAST SALE DISPLAY
     today = pd.Timestamp.today().normalize()
     def sale_label(row):
         if pd.isna(row["last sale date"]):
@@ -173,13 +173,16 @@ if uploaded:
     # TABS
     tab1, tab2, tab3, tab4 = st.tabs(["Velocity Kings", "Dead & Dying", "BUY NOW", "Prophet Speaks"])
 
+    # REORDER COLUMNS: Location ID FIRST
+    col_order = ["location id", "item id", "product group", "weekly", "onhand", "forecast"]
+    if show_dollars:
+        col_order += ["dollarvalue"]
+
     with tab1:
         st.subheader("Top Selling SKUs")
         top = display.nlargest(top_n, "weekly")
-        cols = ["item id", "product group", "weekly", "onhand", "forecast"]
-        if show_dollars:
-            cols += ["dollarvalue"]
-        st.dataframe(top[cols].style.format({
+        top_display = top[col_order]  # Location ID first!
+        st.dataframe(top_display.style.format({
             "weekly": "{:.1f}",
             "forecast": "{:,.0f}",
             "dollarvalue": "${:,.0f}"
@@ -190,7 +193,8 @@ if uploaded:
     with tab2:
         st.subheader("Dead Stock Report")
         dead = display[display["deadstock"]]
-        st.dataframe(dead[["item id", "product group", "onhand", "Days Since Sale"]], height=500)
+        dead_display = dead[["location id", "item id", "product group", "onhand", "Days Since Sale"]]
+        st.dataframe(dead_display, height=500)
         if not dead.empty:
             trapped = dead["dollarvalue"].sum()
             st.error(f"DEAD STOCK → {len(dead)} SKUs • ${trapped:,.0f} trapped")
@@ -198,10 +202,10 @@ if uploaded:
     with tab3:
         st.subheader("Purchase Recommendations")
         orders = display[display["suggestedorder"] > 0].copy().sort_values("suggestedorder", ascending=False)
-        cols = ["item id", "product group", "weekly", "onhand", "suggestedorder"]
+        order_display = orders[["location id", "item id", "product group", "weekly", "onhand", "suggestedorder"]]
         if show_dollars:
-            cols += ["ordervalue"]
-        st.dataframe(orders[cols].style.format({
+            order_display["ordervalue"] = orders["ordervalue"]
+        st.dataframe(order_display.style.format({
             "suggestedorder": "{:,.0f}",
             "ordervalue": "${:,.0f}"
         }), height=600)
@@ -220,14 +224,14 @@ if uploaded:
             ])
             st.markdown(f"**{prophecy}**  \n— *THE Pollo Prophet*")
 
-    # EXPORT
+    # EXPORT – NOW INCLUDES LOCATION ID FIRST
     @st.cache_data
     def export():
         out = io.BytesIO()
         with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
-            df.to_excel(writer, sheet_name="Full Report", index=False)
-            dead.to_excel(writer, sheet_name="Dead Stock", index=False)
-            orders.to_excel(writer, sheet_name="PO List", index=False)
+            df[col_order + ["Days Since Sale", "suggestedorder", "ordervalue"]].to_excel(writer, sheet_name="Full Report", index=False)
+            dead[["location id", "item id", "product group", "onhand", "Days Since Sale"]].to_excel(writer, sheet_name="Dead Stock", index=False)
+            orders[["location id", "item id", "product group", "weekly", "onhand", "suggestedorder", "ordervalue"]].to_excel(writer, sheet_name="PO List", index=False)
         return out.getvalue()
 
     st.download_button(
