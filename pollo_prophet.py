@@ -140,9 +140,9 @@ if uploaded:
 
     # Core metrics
     df["weekly"] = df["ave/mth"] / 4.333
-    df["onhand"] = df["qty on hand"] - df["qty alloc"] - df["qty bo"]
-    df["dollar value"] = df["net qty"] * df["moving avg cost"]
-    df["dead stock"] = (df["ave/mth"] == 0) & (df["net qty"] > 0)
+    df["onhand"] = df["net qty"]
+    df["dollarvalue"] = df["net qty"] * df["moving avg cost"]
+    df["deadstock"] = (df["ave/mth"] == 0) & (df["net qty"] > 0)
 
     # INTELLIGENT LAST SALE DISPLAY
     today = pd.Timestamp.today().normalize()
