@@ -1,5 +1,5 @@
-# POLLO PROPHET v12 – THE ONE TRUE PROPHET (LOCATION ID ADDED)
-# Location ID now first column in all tables – exactly like your reports.
+# POLLO PROPHET v12.5 – THE ONE TRUE PROPHET (FINAL GOD-TIER EDITION)
+# Filterable tables • ATS (real stock) • Appliance Purgatory • Clean UI
 
 import streamlit as st
 import pandas as pd
@@ -10,7 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 
-st.set_page_config(page_title="Pollo Prophet v12", page_icon="rooster_pope.png", layout="wide")
+st.set_page_config(page_title="Pollo Prophet v12.5", page_icon="rooster_pope.png", layout="wide")
 
 # ────── AUTHENTICATION ──────
 if "auth" not in st.session_state:
@@ -34,17 +34,17 @@ WAREHOUSES = {
 NAME_TO_ID = {v.lower(): k for k, v in WAREHOUSES.items()}
 
 # ────── HEADER ──────
-st.title("Pollo Prophet v12 – The One True Prophet")
-st.markdown("**Drop your inventory report. Receive judgment.**")
+st.title("Pollo Prophet v12.5 – The One True Prophet")
+st.markdown("**Drop your inventory report. Receive divine judgment.**")
 
 # ────── DOOMER WISDOM ──────
 with st.sidebar:
     try:
         with open("doomers_fun.txt", "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
-        wisdom = random.choice(lines) if lines else "v12 – The void grows."
+            lines = [l.strip() for l in f if l.strip()]
+        wisdom = random.choice(lines) if lines else "Nothing ever sells, everything rots."
     except:
-        wisdom = "v12 – The void grows."
+        wisdom = "Nothing ever sells, everything rots."
     st.success(wisdom)
 
 # ────── SETTINGS ──────
@@ -78,6 +78,9 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
         "location id": ["location_id", "location id", "loc id", "warehouse id", "locid"],
         "item id": ["item_id", "item id", "sku", "product id", "itemid"],
         "qty on hand": ["qty_on_hand", "qty on hand", "qoh", "on hand", "quantity on hand"],
+        "qty alloc": ["qty_alloc", "alloc", "allocated"],
+        "qty bo": ["qty_bo", "bo", "backorder"],
+        "qty on pos": ["qty_on_pos", "qty on po", "on po", "pos"],
         "net qty": ["net_qty", "net qty", "net quantity", "netqty"],
         "ave/mth": ["ave/mth", "ave mth", "average monthly", "monthly avg"],
         "moving avg cost": ["moving_avg_cost", "moving avg cost", "avg cost", "cost"],
@@ -108,31 +111,34 @@ def load_inventory(files):
     full_df = pd.concat(dfs, ignore_index=True)
     return full_df, True
 
-# ────── MAIN ──────
 if uploaded:
-    with st.spinner("The rooster reads the bones..."):
-        df_raw, success = load_inventory(uploaded)
-    
+    df_raw, success = load_inventory(uploaded)
     if df_raw.empty:
-        st.error("No valid data found. The Prophet rejects your offering.")
+        st.error("No data. Prophet rejects.")
         st.stop()
 
     # Required columns
-    required = ["location id", "item id", "qty on hand", "net qty", "ave/mth", "last sale date"]
+    required = ["location id", "item id", "qty on hand", "ave/mth"]
     missing = [c for c in required if c not in df_raw.columns]
     if missing:
-        st.error(f"Missing columns: {', '.join(missing)}")
+        st.error(f"Missing: {', '.join(missing)}")
         st.stop()
 
-    # Clean & process
+    # Clean & enrich
     df = df_raw.copy()
     df["location id"] = df["location id"].astype(str)
     df["item id"] = df["item id"].astype(str).str.strip()
-    df["qty on hand"] = pd.to_numeric(df["qty on hand"], errors="coerce").fillna(0)
-    df["net qty"] = pd.to_numeric(df["net qty"], errors="coerce").fillna(0)
+
+    # AVAILABLE TO SELL (ATS) — REAL STOCK YOU CAN ACTUALLY SELL TODAY
+    df["ats"] = (
+        pd.to_numeric(df["qty on hand"], errors="coerce").fillna(0)
+        - pd.to_numeric(df.get("qty alloc", 0), errors="coerce").fillna(0)
+        - pd.to_numeric(df.get("qty bo", 0), errors="coerce").fillna(0)
+    )
+
     df["ave/mth"] = pd.to_numeric(df["ave/mth"], errors="coerce").fillna(0)
     df["moving avg cost"] = pd.to_numeric(df.get("moving avg cost", 0), errors="coerce").fillna(0)
-    df["last sale date"] = pd.to_datetime(df["last sale date"], errors="coerce")
+    df["qty on pos"] = pd.to_numeric(df.get("qty on pos", 0), errors="coerce").fillna(0)
 
     # Filter by location
     wanted = list(WAREHOUSES.keys()) if view_all else selected_locs
@@ -140,28 +146,25 @@ if uploaded:
 
     # Core metrics
     df["weekly"] = df["ave/mth"] / 4.333
-    df["onhand"] = df["net qty"]
-    df["dollarvalue"] = df["net qty"] * df["moving avg cost"]
-    df["deadstock"] = (df["ave/mth"] == 0) & (df["net qty"] > 0)
-
-    # INTELLIGENT LAST SALE DISPLAY
-    today = pd.Timestamp.today().normalize()
-    def sale_label(row):
-        if pd.isna(row["last sale date"]):
-            return "Never Sold"
-        days = (today - row["last sale date"]).days
-        if days > 9999 or days < 0:
-            return "OIT" if "qty on pos" in df.columns and row.get("qty on pos", 0) > 0 else "Never Sold"
-        return f"{days} days"
-    df["Days Since Sale"] = df.apply(sale_label, axis=1)
-
-    # Forecasting & Replenishment
     df["forecast"] = (df["weekly"] * forecast_weeks * 1.15).round(0)
     df["leaddemand"] = df["weekly"] * lead_time_weeks
     df["safetystock"] = df["weekly"] * safety_weeks
     df["reorderpoint"] = df["leaddemand"] + df["safetystock"]
-    df["suggestedorder"] = np.maximum(0, df["reorderpoint"] - df["onhand"]).astype(int)
-    df["ordervalue"] = (df["suggestedorder"] * df["moving avg cost"]).round(2)
+    df["suggestedorder"] = np.maximum(0, df["reorderpoint"] - df["ats"]).astype(int)
+    df["dollarvalue"] = df["ats"] * df["moving avg cost"]
+    df["ordervalue"] = df["suggestedorder"] * df["moving avg cost"]
+    df["deadstock"] = (df["ave/mth"] == 0) & (df["ats"] > 0)
+
+    # Last sale intelligence
+    df["last sale date"] = pd.to_datetime(df.get("last sale date"), errors="coerce")
+    today = pd.Timestamp.today().normalize()
+    def sale_status(days):
+        if pd.isna(days):
+            return "Never Sold"
+        if days > 9999:
+            return "OIT" if df["qty on pos"].sum() > 0 else "Never Sold"
+        return f"{int(days)} days"
+    df["Days Since Sale"] = (today - df["last sale date"]).dt.days.apply(sale_status)
 
     # SEARCH
     query = st.text_input("Search SKU / Group")
@@ -171,44 +174,55 @@ if uploaded:
         display = df[mask]
 
     # TABS
-    tab1, tab2, tab3, tab4 = st.tabs(["Velocity Kings", "Dead & Dying", "BUY NOW", "Prophet Speaks"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Velocity Kings", "Appliance Purgatory", "BUY NOW", "Prophet Speaks"])
 
-    # REORDER COLUMNS: Location ID FIRST
-    col_order = ["location id", "item id", "product group", "weekly", "onhand", "forecast"]
+    # CLEAN COLUMN ORDER (Location ID first, index hidden)
+    base_cols = ["location id", "item id", "product group", "weekly", "ats", "forecast"]
     if show_dollars:
-        col_order += ["dollarvalue"]
+        base_cols += ["dollarvalue"]
 
     with tab1:
         st.subheader("Top Selling SKUs")
         top = display.nlargest(top_n, "weekly")
-        top_display = top[col_order]  # Location ID first!
-        st.dataframe(top_display.style.format({
-            "weekly": "{:.1f}",
-            "forecast": "{:,.0f}",
-            "dollarvalue": "${:,.0f}"
-        }), height=500)
+        st.dataframe(
+            top[base_cols].style.format({
+                "weekly": "{:.1f}",
+                "forecast": "{:,.0f}",
+                "dollarvalue": "${:,.0f}"
+            }),
+            use_container_width=True,
+            hide_index=True  # Clean look
+        )
         fig = px.bar(top.head(20), x="item id", y="weekly", color="product group", title="Velocity Kings")
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
-        st.subheader("Dead Stock Report")
-        dead = display[display["deadstock"]]
-        dead_display = dead[["location id", "item id", "product group", "onhand", "Days Since Sale"]]
-        st.dataframe(dead_display, height=500)
-        if not dead.empty:
-            trapped = dead["dollarvalue"].sum()
-            st.error(f"DEAD STOCK → {len(dead)} SKUs • ${trapped:,.0f} trapped")
+        st.subheader("Appliance Purgatory – Dead Stock")
+        dead = display[display["deadstock"]].copy()
+        dead["Trapped $"] = (dead["ats"] * dead["moving avg cost"]).round(0)
+        purgatory_cols = ["location id", "item id", "product group", "ats", "Trapped $", "Days Since Sale"]
+        st.dataframe(
+            dead[purgatory_cols].sort_values("Trapped $", ascending=False),
+            use_container_width=True,
+            hide_index=True
+        )
+        total_trapped = dead["Trapped $"].sum()
+        st.error(f"**APPLIANCE PURGATORY** • {len(dead):,} SKUs • **${total_trapped:,.0f} trapped forever**")
 
     with tab3:
-        st.subheader("Purchase Recommendations")
+        st.subheader("Smart Purchase Recommendations")
         orders = display[display["suggestedorder"] > 0].copy().sort_values("suggestedorder", ascending=False)
-        order_display = orders[["location id", "item id", "product group", "weekly", "onhand", "suggestedorder"]]
+        order_cols = ["location id", "item id", "product group", "weekly", "ats", "suggestedorder"]
         if show_dollars:
-            order_display["ordervalue"] = orders["ordervalue"]
-        st.dataframe(order_display.style.format({
-            "suggestedorder": "{:,.0f}",
-            "ordervalue": "${:,.0f}"
-        }), height=600)
+            order_cols += ["ordervalue"]
+        st.dataframe(
+            orders[order_cols].style.format({
+                "suggestedorder": "{:,.0f}",
+                "ordervalue": "${:,.0f}"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
         total_units = orders["suggestedorder"].sum()
         total_value = orders["ordervalue"].sum() if show_dollars else 0
         st.metric("Total Units to Buy", f"{total_units:,.0f}", delta=f"${total_value:,.0f}" if show_dollars else "")
@@ -218,24 +232,25 @@ if uploaded:
             top_sku = top.iloc[0]["item id"] if len(top) > 0 else "the void"
             prophecy = random.choice([
                 f"{top_sku} is your golden goose.",
-                f"{len(dead)} corpses haunt the warehouse.",
-                f"Buy {int(total_units):,} units or perish.",
-                f"BSAMWASH reigns eternal."
+                f"{len(dead)} appliances rot in purgatory.",
+                f"Buy {int(total_units):,} units or face the void.",
+                f"${total_trapped:,.0f} is trapped. Free it or perish.",
+                f"BSAMWASH reigns. All else is dust."
             ])
             st.markdown(f"**{prophecy}**  \n— *THE Pollo Prophet*")
 
-    # EXPORT – NOW INCLUDES LOCATION ID FIRST
+    # EXPORT
     @st.cache_data
     def export():
         out = io.BytesIO()
         with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
-            df[col_order + ["Days Since Sale", "suggestedorder", "ordervalue"]].to_excel(writer, sheet_name="Full Report", index=False)
-            dead[["location id", "item id", "product group", "onhand", "Days Since Sale"]].to_excel(writer, sheet_name="Dead Stock", index=False)
-            orders[["location id", "item id", "product group", "weekly", "onhand", "suggestedorder", "ordervalue"]].to_excel(writer, sheet_name="PO List", index=False)
+            df[base_cols + ["Days Since Sale", "suggestedorder", "ordervalue"]].to_excel(writer, sheet_name="Full Report", index=False)
+            dead[purgatory_cols].to_excel(writer, sheet_name="Appliance Purgatory", index=False)
+            orders[order_cols].to_excel(writer, sheet_name="PO List", index=False)
         return out.getvalue()
 
     st.download_button(
-        "Download Full Report.xlsx",
+        "Download Full Prophet Report.xlsx",
         data=export(),
         file_name=f"Pollo_Prophet_{datetime.now():%Y%m%d}.xlsx"
     )
