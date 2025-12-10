@@ -1,5 +1,6 @@
-# POLLO PROPHET v12.6 – THE ONE TRUE PROPHET (ROCK-SOLID FINAL)
+# POLLO PROPHET v12.7 – THE ONE TRUE PROPHET (ROCK-SOLID FINAL)
 # Fixed: Safe handling of missing "qty alloc", "qty bo", "qty on pos" columns
+# NEW: Cost column in reports, order value = cost × suggested order
 # No crashes. Ever.
 
 import streamlit as st
@@ -11,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import random
 
-st.set_page_config(page_title="Pollo Prophet v12.6", page_icon="rooster_pope.png", layout="wide")
+st.set_page_config(page_title="Pollo Prophet v12.7", page_icon="rooster_pope.png", layout="wide")
 
 # ────── AUTHENTICATION ──────
 if "auth" not in st.session_state:
@@ -36,7 +37,7 @@ WAREHOUSES = {
 NAME_TO_ID = {v.lower(): k for k, v in WAREHOUSES.items()}
             
 # ────── HEADER ──────
-st.title("Pollo Prophet v12.6 – The One True Prophet")
+st.title("Pollo Prophet v12.7 – The One True Prophet")
 st.markdown("**Drop your inventory report. Receive divine judgment.**")
 
 # ────── DOOMER WISDOM ──────
@@ -86,7 +87,7 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
         "net qty": ["net_qty", "net qty", "net quantity", "netqty"],
         "ave/mth": ["ave/mth", "ave mth", "average monthly", "monthly avg"],
         "cost": ["po_cost", "current_cost", "order cost", "unit price", "price", "Cost"],
-        "moving avg cost": ["moving_avg_cost", "moving avg cost", "avg cost", "cost"],
+        "moving avg cost": ["moving_avg_cost", "moving avg cost", "avg cost"],
         "last sale date": ["last_sale_date", "last sale date", "last sold", "lastsale"],
         "product group": ["product_group", "product group", "category", "group"],
         
@@ -145,8 +146,13 @@ if uploaded:
     df["qty_on_pos"]  = safe_numeric("qty on pos", 0)
     df["net_qty"]     = safe_numeric("net qty", 0)
     df["ave/mth"]     = safe_numeric("ave/mth", 0)
+    
+    # CRITICAL: Separate cost and moving avg cost handling
     df["moving avg cost"] = safe_numeric("moving avg cost", 0)
-    df["cost"]        = safe_numeric("moving avg cost", 0)
+    df["cost"] = safe_numeric("cost", 0)
+    
+    # If cost column is missing or zero, fallback to moving avg cost
+    df["cost"] = df["cost"].replace(0, np.nan).fillna(df["moving avg cost"])
 
     # AVAILABLE TO SELL (ATS) — THE TRUE NUMBER
     df["ats"] = df["qty_on_hand"] - df["qty_alloc"] - df["qty_bo"]
@@ -162,8 +168,13 @@ if uploaded:
     df["safetystock"] = df["weekly"] * safety_weeks
     df["reorderpoint"] = df["leaddemand"] + df["safetystock"]
     df["suggestedorder"] = np.maximum(0, df["reorderpoint"] - df["ats"]).astype(int)
+    
+    # CRITICAL: Dollar value uses moving avg cost (inventory valuation)
     df["dollarvalue"] = df["ats"] * df["moving avg cost"]
+    
+    # CRITICAL: Order value uses COST, not moving avg cost (purchase orders)
     df["ordervalue"] = df["suggestedorder"] * df["cost"]
+    
     df["deadstock"] = (df["ave/mth"] == 0) & (df["ats"] > 0)
 
     # Last sale intelligence
@@ -187,10 +198,10 @@ if uploaded:
     # TABS
     tab1, tab2, tab3, tab4 = st.tabs(["Velocity Kings", "Appliance Purgatory", "BUY NOW", "Prophet Speaks"])
 
-    # COLUMN ORDER — Location ID first, index hidden
+    # COLUMN ORDER — Location ID first, index hidden, cost included
     base_cols = ["location id", "item id", "product group", "weekly", "ats", "forecast"]
     if show_dollars:
-        base_cols += ["dollarvalue"]
+        base_cols += ["dollarvalue", "cost"]
 
     with tab1:
         st.subheader("Top Selling SKUs")
@@ -199,7 +210,8 @@ if uploaded:
             top[base_cols].style.format({
                 "weekly": "{:.1f}",
                 "forecast": "{:,.0f}",
-                "dollarvalue": "${:,.0f}"
+                "dollarvalue": "${:,.0f}",
+                "cost": "${:,.2f}"
             }),
             use_container_width=True,
             hide_index=True
@@ -223,12 +235,13 @@ if uploaded:
     with tab3:
         st.subheader("Smart Purchase Recommendations")
         orders = display[display["suggestedorder"] > 0].copy().sort_values("suggestedorder", ascending=False)
-        order_cols = ["location id", "item id", "product group", "weekly", "ats", "suggestedorder"]
+        order_cols = ["location id", "item id", "product group", "weekly", "ats", "suggestedorder", "cost"]
         if show_dollars:
             order_cols += ["ordervalue"]
         st.dataframe(
             orders[order_cols].style.format({
                 "suggestedorder": "{:,.0f}",
+                "cost": "${:,.2f}",
                 "ordervalue": "${:,.0f}"
             }),
             use_container_width=True,
@@ -250,14 +263,20 @@ if uploaded:
             ])
             st.markdown(f"**{prophecy}**  \n— *THE Pollo Prophet*")
 
-    # EXPORT
+    # EXPORT — Now includes cost column in all sheets
     @st.cache_data
     def export():
         out = io.BytesIO()
         with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
-            df[base_cols + ["Days Since Sale", "suggestedorder", "ordervalue"]].to_excel(writer, sheet_name="Full Report", index=False)
+            # Full Report with cost column
+            export_cols = base_cols + ["Days Since Sale", "suggestedorder", "ordervalue"]
+            df[export_cols].to_excel(writer, sheet_name="Full Report", index=False)
+            
+            # Appliance Purgatory
             dead[purgatory_cols].to_excel(writer, sheet_name="Appliance Purgatory", index=False)
-            orders[order_cols].to_excel(writer, sheet_name="PO List", index=False)
+            
+            # PO List with cost column
+            orders[order_cols + (["ordervalue"] if show_dollars else [])].to_excel(writer, sheet_name="PO List", index=False)
         return out.getvalue()
 
     st.download_button(
