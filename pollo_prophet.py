@@ -87,7 +87,8 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
         "ave/mth": ["ave/mth", "ave mth", "average monthly", "monthly avg"],
         "moving avg cost": ["moving_avg_cost", "moving avg cost", "avg cost", "cost"],
         "last sale date": ["last_sale_date", "last sale date", "last sold", "lastsale"],
-        "product group": ["product_group", "product group", "category", "group"]
+        "product group": ["product_group", "product group", "category", "group"],
+        "cost": ["po_cost", "current_cost", "order cost", "unit price", "price"]
     }
     for standard, variants in aliases.items():
         for v in variants:
@@ -120,7 +121,7 @@ if uploaded:
         st.stop()
 
     # Required columns
-    required = ["location id", "item id", "qty on hand", "ave/mth"]
+    required = ["location id", "item id", "qty on hand", "cost", "ave/mth"]
     missing = [c for c in required if c not in df_raw.columns]
     if missing:
         st.error(f"Missing: {', '.join(missing)}")
@@ -144,6 +145,7 @@ if uploaded:
     df["net_qty"]     = safe_numeric("net qty", 0)
     df["ave/mth"]     = safe_numeric("ave/mth", 0)
     df["moving avg cost"] = safe_numeric("moving avg cost", 0)
+    df["cost"] = safe_numeric("moving avg cost", 0)
 
     # AVAILABLE TO SELL (ATS) — THE TRUE NUMBER
     df["ats"] = df["qty_on_hand"] - df["qty_alloc"] - df["qty_bo"]
@@ -160,7 +162,7 @@ if uploaded:
     df["reorderpoint"] = df["leaddemand"] + df["safetystock"]
     df["suggestedorder"] = np.maximum(0, df["reorderpoint"] - df["ats"]).astype(int)
     df["dollarvalue"] = df["ats"] * df["moving avg cost"]
-    df["ordervalue"] = df["suggestedorder"] * df["moving avg cost"]
+    df["ordervalue"] = df["suggestedorder"] * df["cost"]
     df["deadstock"] = (df["ave/mth"] == 0) & (df["ats"] > 0)
 
     # Last sale intelligence
@@ -243,7 +245,7 @@ if uploaded:
                 f"{len(dead)} corpses haunt the warehouse.",
                 f"Buy {int(total_units):,} units or perish.",
                 f"${total_trapped:,.0f} is trapped. Free it or perish.",
-                f"BSAMWASH reigns eternal."
+                f"AGERANGE reigns eternal."
             ])
             st.markdown(f"**{prophecy}**  \n— *THE Pollo Prophet*")
 
