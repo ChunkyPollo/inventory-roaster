@@ -85,10 +85,11 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
         "qty on pos": ["qty_on_pos", "qty on po", "on po", "pos", "qtyonpos"],
         "net qty": ["net_qty", "net qty", "net quantity", "netqty"],
         "ave/mth": ["ave/mth", "ave mth", "average monthly", "monthly avg"],
+        "cost": ["po_cost", "current_cost", "order cost", "unit price", "price", "Cost"],
         "moving avg cost": ["moving_avg_cost", "moving avg cost", "avg cost", "cost"],
         "last sale date": ["last_sale_date", "last sale date", "last sold", "lastsale"],
         "product group": ["product_group", "product group", "category", "group"],
-        "cost": ["po_cost", "current_cost", "order cost", "unit price", "price", "Cost"]
+        
     }
     for standard, variants in aliases.items():
         for v in variants:
@@ -121,7 +122,7 @@ if uploaded:
         st.stop()
 
     # Required columns
-    required = ["location id", "item id", "qty on hand", "cost", "ave/mth"]
+    required = ["location id", "item id", "qty on hand", "ave/mth"]
     missing = [c for c in required if c not in df_raw.columns]
     if missing:
         st.error(f"Missing: {', '.join(missing)}")
@@ -145,7 +146,7 @@ if uploaded:
     df["net_qty"]     = safe_numeric("net qty", 0)
     df["ave/mth"]     = safe_numeric("ave/mth", 0)
     df["moving avg cost"] = safe_numeric("moving avg cost", 0)
-    df["cost"] = safe_numeric("moving avg cost", 0)
+    df["cost"]        = safe_numeric("moving avg cost", 0)
 
     # AVAILABLE TO SELL (ATS) — THE TRUE NUMBER
     df["ats"] = df["qty_on_hand"] - df["qty_alloc"] - df["qty_bo"]
