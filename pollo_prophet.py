@@ -88,7 +88,7 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
         "moving avg cost": ["moving_avg_cost", "moving avg cost", "avg cost", "cost"],
         "last sale date": ["last_sale_date", "last sale date", "last sold", "lastsale"],
         "product group": ["product_group", "product group", "category", "group"],
-        "cost": ["po_cost", "current_cost", "order cost", "unit price", "price"]
+        "cost": ["po_cost", "current_cost", "order cost", "unit price", "price", "Cost"]
     }
     for standard, variants in aliases.items():
         for v in variants:
